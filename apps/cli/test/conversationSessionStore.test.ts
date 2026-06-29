@@ -56,7 +56,7 @@ test("SqliteConversationSessionStore saves and loads conversation session entrie
   ];
 
   try {
-    conversationSessionStore.saveConversationSessionEntries(conversationSessionEntries);
+    replaceActiveConversationSessionEntries(conversationSessionStore, conversationSessionEntries);
 
     expect(conversationSessionStore.loadConversationSessionEntries()).toEqual(conversationSessionEntries);
     expect(conversationSessionStore.listConversationSessions()).toEqual([
@@ -96,7 +96,7 @@ test("SqliteConversationSessionStore loads ordered conversation entry record sli
   ];
 
   try {
-    conversationSessionStore.saveConversationSessionEntries(conversationSessionEntries);
+    replaceActiveConversationSessionEntries(conversationSessionStore, conversationSessionEntries);
 
     const latestEntryRecordSlice = conversationSessionStore.loadConversationSessionEntryRecords({
       loadKind: "latest",
@@ -150,7 +150,7 @@ test("SqliteConversationSessionStore records SQLite operation summaries", async 
   });
 
   try {
-    conversationSessionStore.appendConversationSessionEntry({
+    appendConversationSessionEntryToActiveSession(conversationSessionStore, {
       entryKind: "user_prompt",
       promptText: "Measure storage",
       modelFacingPromptText: "Measure storage",
@@ -184,7 +184,7 @@ test("SqliteConversationSessionStore bounds generated titles", async () => {
   });
 
   try {
-    conversationSessionStore.appendConversationSessionEntry({
+    appendConversationSessionEntryToActiveSession(conversationSessionStore, {
       entryKind: "user_prompt",
       promptText: `${"Summarize ".repeat(20)}\nwith details`,
       modelFacingPromptText: "Long prompt",
@@ -215,7 +215,7 @@ test("SqliteConversationSessionStore recovers corrupt persisted entry JSON", asy
   });
 
   try {
-    conversationSessionStore.saveConversationSessionEntries([
+    replaceActiveConversationSessionEntries(conversationSessionStore, [
       {
         entryKind: "user_prompt",
         promptText: "Prompt before corruption",
@@ -263,7 +263,7 @@ test("SqliteConversationSessionStore ignores corrupt persisted model selection J
   });
 
   try {
-    conversationSessionStore.saveActiveConversationSessionModelSelection({ selectedModelId: "gpt-5.4" });
+    saveActiveConversationSessionModelSelection(conversationSessionStore, { selectedModelId: "gpt-5.4" });
   } finally {
     conversationSessionStore.close();
   }
@@ -281,35 +281,52 @@ test("SqliteConversationSessionStore ignores corrupt persisted model selection J
   }
 });
 
-test("SqliteConversationSessionStore appends entries from separate store instances into one active session", async () => {
-  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-sqlite-shared-"));
+test("SqliteConversationSessionStore keeps scoped appends isolated after another store changes the shared active session", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-sqlite-scoped-append-"));
   const databasePath = join(directoryPath, "session-store.sqlite");
   const firstConversationSessionStore = new SqliteConversationSessionStore({
     databasePath,
-    createSessionId: () => "session-1",
-    createSessionEntryId: () => "entry-1",
-    nowMs: createQueuedNumberFactory([1000, 1001]),
+    createSessionId: createQueuedStringFactory(["session-a"]),
+    createSessionEntryId: createQueuedStringFactory(["entry-a-1", "entry-a-2"]),
+    nowMs: createQueuedNumberFactory([1000, 1001, 3000]),
   });
   const secondConversationSessionStore = new SqliteConversationSessionStore({
     databasePath,
-    createSessionId: () => "unused-session-id",
-    createSessionEntryId: () => "entry-2",
-    nowMs: () => 1002,
+    createSessionId: createQueuedStringFactory(["session-b"]),
+    createSessionEntryId: createQueuedStringFactory(["entry-b-1"]),
+    nowMs: createQueuedNumberFactory([2000, 2001]),
   });
 
   try {
-    firstConversationSessionStore.appendConversationSessionEntry({
-      entryKind: "user_prompt",
-      promptText: "First prompt",
-      modelFacingPromptText: "First prompt",
+    const firstConversationSessionId = firstConversationSessionStore.loadActiveConversationSessionMetadata().sessionId;
+    firstConversationSessionStore.appendConversationSessionEntryToSession({
+      conversationSessionId: firstConversationSessionId,
+      conversationSessionEntry: {
+        entryKind: "user_prompt",
+        promptText: "First prompt",
+        modelFacingPromptText: "First prompt",
+      },
     });
-    secondConversationSessionStore.appendConversationSessionEntry({
-      entryKind: "assistant_message",
-      assistantMessageStatus: "completed",
-      assistantMessageText: "Second answer",
+    const secondConversationSessionId = secondConversationSessionStore.startNewConversationSession().sessionId;
+    secondConversationSessionStore.appendConversationSessionEntryToSession({
+      conversationSessionId: secondConversationSessionId,
+      conversationSessionEntry: {
+        entryKind: "user_prompt",
+        promptText: "Second prompt",
+        modelFacingPromptText: "Second prompt",
+      },
     });
 
-    expect(secondConversationSessionStore.loadConversationSessionEntries()).toEqual([
+    firstConversationSessionStore.appendConversationSessionEntryToSession({
+      conversationSessionId: firstConversationSessionId,
+      conversationSessionEntry: {
+        entryKind: "assistant_message",
+        assistantMessageStatus: "completed",
+        assistantMessageText: "First answer after second store changed active session",
+      },
+    });
+
+    expect(firstConversationSessionStore.loadConversationSessionEntries(firstConversationSessionId)).toEqual([
       {
         entryKind: "user_prompt",
         promptText: "First prompt",
@@ -318,15 +335,114 @@ test("SqliteConversationSessionStore appends entries from separate store instanc
       {
         entryKind: "assistant_message",
         assistantMessageStatus: "completed",
-        assistantMessageText: "Second answer",
+        assistantMessageText: "First answer after second store changed active session",
       },
     ]);
-    expect(secondConversationSessionStore.listConversationSessions()).toMatchObject([
+    expect(secondConversationSessionStore.loadConversationSessionEntries(secondConversationSessionId)).toEqual([
       {
-        sessionId: "session-1",
-        title: "First prompt",
-        updatedAtMs: 1002,
-        conversationSessionEntryCount: 2,
+        entryKind: "user_prompt",
+        promptText: "Second prompt",
+        modelFacingPromptText: "Second prompt",
+      },
+    ]);
+    expect(secondConversationSessionStore.loadActiveConversationSession().sessionId).toBe(secondConversationSessionId);
+  } finally {
+    firstConversationSessionStore.close();
+    secondConversationSessionStore.close();
+  }
+});
+
+test("SqliteConversationSessionStore keeps scoped model selection saves isolated after another store changes the shared active session", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-sqlite-scoped-model-"));
+  const databasePath = join(directoryPath, "session-store.sqlite");
+  const firstConversationSessionStore = new SqliteConversationSessionStore({
+    databasePath,
+    createSessionId: createQueuedStringFactory(["session-a"]),
+    nowMs: createQueuedNumberFactory([1000, 3000]),
+  });
+  const secondConversationSessionStore = new SqliteConversationSessionStore({
+    databasePath,
+    createSessionId: createQueuedStringFactory(["session-b"]),
+    nowMs: () => 2000,
+  });
+  const firstModelSelection: ConversationSessionModelSelection = {
+    selectedModelId: "gpt-5.4",
+    selectedReasoningEffort: "high",
+  };
+  const secondModelSelection: ConversationSessionModelSelection = {
+    selectedModelId: "gpt-5.5",
+    selectedReasoningEffort: "low",
+  };
+
+  try {
+    const firstConversationSessionId = firstConversationSessionStore.loadActiveConversationSessionMetadata().sessionId;
+    const secondConversationSessionId = secondConversationSessionStore.startNewConversationSession({
+      modelSelection: secondModelSelection,
+    }).sessionId;
+
+    firstConversationSessionStore.saveConversationSessionModelSelectionForSession({
+      conversationSessionId: firstConversationSessionId,
+      modelSelection: firstModelSelection,
+    });
+
+    expect(firstConversationSessionStore.switchActiveConversationSession(firstConversationSessionId).modelSelection).toEqual(
+      firstModelSelection,
+    );
+    expect(secondConversationSessionStore.switchActiveConversationSession(secondConversationSessionId).modelSelection).toEqual(
+      secondModelSelection,
+    );
+  } finally {
+    firstConversationSessionStore.close();
+    secondConversationSessionStore.close();
+  }
+});
+
+test("SqliteConversationSessionStore keeps scoped replacement isolated after another store changes the shared active session", async () => {
+  const directoryPath = await mkdtemp(join(tmpdir(), "buli-session-store-sqlite-scoped-replace-"));
+  const databasePath = join(directoryPath, "session-store.sqlite");
+  const firstConversationSessionStore = new SqliteConversationSessionStore({
+    databasePath,
+    createSessionId: createQueuedStringFactory(["session-a"]),
+    createSessionEntryId: createQueuedStringFactory(["entry-a-1"]),
+    nowMs: createQueuedNumberFactory([1000, 3000]),
+  });
+  const secondConversationSessionStore = new SqliteConversationSessionStore({
+    databasePath,
+    createSessionId: createQueuedStringFactory(["session-b"]),
+    createSessionEntryId: createQueuedStringFactory(["entry-b-1"]),
+    nowMs: createQueuedNumberFactory([2000, 2001]),
+  });
+  const replacementEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Replaced first prompt",
+      modelFacingPromptText: "Replaced first prompt",
+    },
+  ];
+
+  try {
+    const firstConversationSessionId = firstConversationSessionStore.loadActiveConversationSessionMetadata().sessionId;
+    const secondConversationSessionId = secondConversationSessionStore.startNewConversationSession().sessionId;
+    secondConversationSessionStore.appendConversationSessionEntryToSession({
+      conversationSessionId: secondConversationSessionId,
+      conversationSessionEntry: {
+        entryKind: "user_prompt",
+        promptText: "Second prompt",
+        modelFacingPromptText: "Second prompt",
+      },
+    });
+
+    firstConversationSessionStore.replaceConversationSessionEntriesForSession({
+      conversationSessionId: firstConversationSessionId,
+      conversationSessionEntries: replacementEntries,
+    });
+
+    expect(firstConversationSessionStore.loadConversationSessionEntries(firstConversationSessionId)).toEqual(replacementEntries);
+    expect(secondConversationSessionStore.loadConversationSessionEntries(secondConversationSessionId)).toEqual([
+      {
+        entryKind: "user_prompt",
+        promptText: "Second prompt",
+        modelFacingPromptText: "Second prompt",
       },
     ]);
   } finally {
@@ -353,8 +469,8 @@ test("SqliteConversationSessionStore persists the latest active session model se
   };
 
   try {
-    conversationSessionStore.saveActiveConversationSessionModelSelection(firstModelSelection);
-    conversationSessionStore.saveActiveConversationSessionModelSelection(latestModelSelection);
+    saveActiveConversationSessionModelSelection(conversationSessionStore, firstModelSelection);
+    saveActiveConversationSessionModelSelection(conversationSessionStore, latestModelSelection);
 
     expect(conversationSessionStore.loadActiveConversationSession().modelSelection).toEqual(latestModelSelection);
     expect(conversationSessionStore.listConversationSessions()).toMatchObject([
@@ -414,13 +530,13 @@ test("SqliteConversationSessionStore lists sessions by most recent entry timesta
 
   try {
     const firstConversationSession = conversationSessionStore.startNewConversationSession();
-    conversationSessionStore.appendConversationSessionEntry({
+    appendConversationSessionEntryToActiveSession(conversationSessionStore, {
       entryKind: "user_prompt",
       promptText: "First prompt",
       modelFacingPromptText: "First prompt",
     });
     const secondConversationSession = conversationSessionStore.startNewConversationSession();
-    conversationSessionStore.appendConversationSessionEntry({
+    appendConversationSessionEntryToActiveSession(conversationSessionStore, {
       entryKind: "user_prompt",
       promptText: "Second prompt",
       modelFacingPromptText: "Second prompt",
@@ -458,13 +574,13 @@ test("SqliteConversationSessionStore switches active sessions", async () => {
 
   try {
     const firstConversationSession = conversationSessionStore.startNewConversationSession();
-    conversationSessionStore.appendConversationSessionEntry({
+    appendConversationSessionEntryToActiveSession(conversationSessionStore, {
       entryKind: "user_prompt",
       promptText: "First prompt",
       modelFacingPromptText: "First prompt",
     });
     const secondConversationSession = conversationSessionStore.startNewConversationSession();
-    conversationSessionStore.appendConversationSessionEntry({
+    appendConversationSessionEntryToActiveSession(conversationSessionStore, {
       entryKind: "user_prompt",
       promptText: "Second prompt",
       modelFacingPromptText: "Second prompt",
@@ -500,13 +616,13 @@ test("SqliteConversationSessionStore deletes an inactive session without changin
 
   try {
     const firstConversationSession = conversationSessionStore.startNewConversationSession();
-    conversationSessionStore.appendConversationSessionEntry({
+    appendConversationSessionEntryToActiveSession(conversationSessionStore, {
       entryKind: "user_prompt",
       promptText: "First prompt",
       modelFacingPromptText: "First prompt",
     });
     const secondConversationSession = conversationSessionStore.startNewConversationSession();
-    conversationSessionStore.appendConversationSessionEntry({
+    appendConversationSessionEntryToActiveSession(conversationSessionStore, {
       entryKind: "user_prompt",
       promptText: "Second prompt",
       modelFacingPromptText: "Second prompt",
@@ -534,13 +650,13 @@ test("SqliteConversationSessionStore deletes the active session and switches to 
 
   try {
     const firstConversationSession = conversationSessionStore.startNewConversationSession();
-    conversationSessionStore.appendConversationSessionEntry({
+    appendConversationSessionEntryToActiveSession(conversationSessionStore, {
       entryKind: "user_prompt",
       promptText: "First prompt",
       modelFacingPromptText: "First prompt",
     });
     const secondConversationSession = conversationSessionStore.startNewConversationSession();
-    conversationSessionStore.appendConversationSessionEntry({
+    appendConversationSessionEntryToActiveSession(conversationSessionStore, {
       entryKind: "user_prompt",
       promptText: "Second prompt",
       modelFacingPromptText: "Second prompt",
@@ -567,7 +683,7 @@ test("SqliteConversationSessionStore creates a new empty active session after de
 
   try {
     const firstConversationSession = conversationSessionStore.startNewConversationSession();
-    conversationSessionStore.appendConversationSessionEntry({
+    appendConversationSessionEntryToActiveSession(conversationSessionStore, {
       entryKind: "user_prompt",
       promptText: "First prompt",
       modelFacingPromptText: "First prompt",
@@ -648,7 +764,7 @@ test("SqliteConversationSessionStore reloads history with safe model context aft
   ];
 
   try {
-    conversationSessionStore.saveConversationSessionEntries(persistedConversationSessionEntries);
+    replaceActiveConversationSessionEntries(conversationSessionStore, persistedConversationSessionEntries);
     const restartedConversationHistory = new InMemoryConversationHistory({
       initialConversationSessionEntries: conversationSessionStore.loadConversationSessionEntries(),
     });
@@ -710,4 +826,37 @@ function createUserPromptConversationSessionEntry(promptText: string): Conversat
     promptText,
     modelFacingPromptText: promptText,
   };
+}
+
+function appendConversationSessionEntryToActiveSession(
+  conversationSessionStore: SqliteConversationSessionStore,
+  conversationSessionEntry: ConversationSessionEntry,
+): void {
+  const conversationSessionId = conversationSessionStore.loadActiveConversationSessionMetadata().sessionId;
+  conversationSessionStore.appendConversationSessionEntryToSession({
+    conversationSessionId,
+    conversationSessionEntry,
+  });
+}
+
+function saveActiveConversationSessionModelSelection(
+  conversationSessionStore: SqliteConversationSessionStore,
+  modelSelection: ConversationSessionModelSelection,
+): void {
+  const conversationSessionId = conversationSessionStore.loadActiveConversationSessionMetadata().sessionId;
+  conversationSessionStore.saveConversationSessionModelSelectionForSession({
+    conversationSessionId,
+    modelSelection,
+  });
+}
+
+function replaceActiveConversationSessionEntries(
+  conversationSessionStore: SqliteConversationSessionStore,
+  conversationSessionEntries: readonly ConversationSessionEntry[],
+): void {
+  const conversationSessionId = conversationSessionStore.loadActiveConversationSessionMetadata().sessionId;
+  conversationSessionStore.replaceConversationSessionEntriesForSession({
+    conversationSessionId,
+    conversationSessionEntries,
+  });
 }

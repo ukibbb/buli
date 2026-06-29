@@ -34,12 +34,15 @@ export const sqliteSessionLargeHistoryScenario: PerformanceScenario = {
     });
 
     const heapUsedBeforeScenario = process.memoryUsage().heapUsed;
+    const firstConversationSessionId = conversationSessionStore.loadActiveConversationSessionMetadata().sessionId;
     const appendEntries = await measureDurationMs(() => {
       for (const conversationSessionEntry of conversationSessionEntries) {
-        conversationSessionStore.appendConversationSessionEntry(conversationSessionEntry);
+        conversationSessionStore.appendConversationSessionEntryToSession({
+          conversationSessionId: firstConversationSessionId,
+          conversationSessionEntry,
+        });
       }
     });
-    const firstConversationSessionId = conversationSessionStore.loadActiveConversationSessionMetadata().sessionId;
     conversationSessionStore.startNewConversationSession();
     const listSessions = await measureDurationMs(() => conversationSessionStore.listConversationSessions());
     const switchActiveSession = await measureDurationMs(() =>

@@ -34,7 +34,10 @@ import {
   combineBuliDiagnosticLoggers,
   installBuliProfileLogger,
 } from "../profiling/buliProfileLogger.ts";
-import { createInteractiveChatConversationSessionBindings } from "../interactiveChat/interactiveChatConversationSessionBindings.ts";
+import {
+  createInteractiveChatConversationSessionBindings,
+  type RunningChatConversationSessionWriteTarget,
+} from "../interactiveChat/interactiveChatConversationSessionBindings.ts";
 import { logCliDiagnosticEvent } from "../diagnostics/cliDiagnosticLog.ts";
 import {
   INVALID_AUTO_COMPACTION_THRESHOLD_MESSAGE,
@@ -214,6 +217,9 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
     const conversationSessionStore = input.conversationSessionStore ??
       (defaultConversationSessionStore = new SqliteConversationSessionStore({ diagnosticLogger }));
     const activeConversationSessionMetadata = conversationSessionStore.loadActiveConversationSessionMetadata();
+    const runningChatConversationSessionWriteTarget: RunningChatConversationSessionWriteTarget = {
+      conversationSessionId: activeConversationSessionMetadata.sessionId,
+    };
     const initialModelSelectionResolution = resolveInitialConversationSessionModelSelection({
       requestedModelId: input.selectedModelId,
       requestedReasoningEffort: input.selectedReasoningEffort,
@@ -226,7 +232,10 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
         activeConversationSessionModelSelection,
       )
     ) {
-      conversationSessionStore.saveActiveConversationSessionModelSelection(activeConversationSessionModelSelection);
+      conversationSessionStore.saveConversationSessionModelSelectionForSession({
+        conversationSessionId: runningChatConversationSessionWriteTarget.conversationSessionId,
+        modelSelection: activeConversationSessionModelSelection,
+      });
     }
     const selectedModelId = activeConversationSessionModelSelection.selectedModelId;
     const selectedModelDefaultReasoningEffort = initialModelSelectionResolution.selectedModelDefaultReasoningEffort;
@@ -305,13 +314,19 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
       initialConversationSessionEntries: initialRuntimeConversationSessionEntries,
       onConversationSessionEntryAppended: (conversationSessionEntry, appendMetadata) => {
         const conversationSessionAppendStartedAtMs = Date.now();
-        conversationSessionStore.appendConversationSessionEntry(conversationSessionEntry);
+        const conversationSessionId = runningChatConversationSessionWriteTarget.conversationSessionId;
+        conversationSessionStore.appendConversationSessionEntryToSession({
+          conversationSessionId,
+          conversationSessionEntry,
+        });
         logCliDiagnosticEvent(diagnosticLogger, "conversation_session.append_entry_timing", {
+          conversationSessionId,
           conversationSessionEntryKind: conversationSessionEntry.entryKind,
           durationMs: Date.now() - conversationSessionAppendStartedAtMs,
           conversationSessionEntryCount: appendMetadata.conversationSessionEntryCount,
         });
         logCliDiagnosticEvent(diagnosticLogger, "conversation_session.saved", {
+          conversationSessionId,
           conversationSessionEntryKind: conversationSessionEntry.entryKind,
           assistantOperatingMode: conversationSessionEntry.entryKind === "user_prompt"
             ? conversationSessionEntry.assistantOperatingMode ?? null
@@ -360,6 +375,7 @@ export async function runInteractiveChat(input: RunInteractiveChatInput = {}): P
       conversationSessionStore,
       conversationHistory,
       assistantConversationRunner,
+      conversationSessionWriteTarget: runningChatConversationSessionWriteTarget,
       initialConversationSessionId: activeConversationSessionMetadata.sessionId,
       initialConversationSessionModelSelection: activeConversationSessionModelSelection,
       conversationTranscriptHydrationMode,

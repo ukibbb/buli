@@ -487,11 +487,11 @@ function createConversationSessionStoreStub(input: {
       hasNewerEntries: false,
       latestCompactionSummaryEntrySequence: undefined,
     }),
-    appendConversationSessionEntry: () => {},
-    saveActiveConversationSessionModelSelection: (modelSelection) => {
-      activeModelSelection = modelSelection;
+    appendConversationSessionEntryToSession: () => {},
+    saveConversationSessionModelSelectionForSession: (sessionModelSelectionSave) => {
+      activeModelSelection = sessionModelSelectionSave.modelSelection;
     },
-    saveConversationSessionEntries: () => {},
+    replaceConversationSessionEntriesForSession: () => {},
     startNewConversationSession: (startNewConversationSessionInput) => {
       activeModelSelection = startNewConversationSessionInput?.modelSelection;
       return {

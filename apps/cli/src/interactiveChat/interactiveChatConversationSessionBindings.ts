@@ -31,12 +31,17 @@ export type InteractiveChatConversationSessionBindings = {
   readActiveConversationSessionModelSelection(): ConversationSessionModelSelection;
 };
 
+export type RunningChatConversationSessionWriteTarget = {
+  conversationSessionId: string;
+};
+
 export type InteractiveChatConversationTranscriptHydrationMode = "full_session_entries" | "paged_transcript";
 
 export function createInteractiveChatConversationSessionBindings(input: {
   conversationSessionStore: ConversationSessionStore;
   conversationHistory: InMemoryConversationHistory;
   assistantConversationRunner: AssistantConversationRuntime;
+  conversationSessionWriteTarget: RunningChatConversationSessionWriteTarget;
   initialConversationSessionId: string;
   initialConversationSessionModelSelection: ConversationSessionModelSelection;
   conversationTranscriptHydrationMode?: InteractiveChatConversationTranscriptHydrationMode | undefined;
@@ -45,7 +50,7 @@ export function createInteractiveChatConversationSessionBindings(input: {
   openBrowserUrl?: BrowserUrlLauncher | undefined;
   diagnosticLogger?: BuliDiagnosticLogger | undefined;
 }): InteractiveChatConversationSessionBindings {
-  let activeConversationSessionId = input.initialConversationSessionId;
+  input.conversationSessionWriteTarget.conversationSessionId = input.initialConversationSessionId;
   let activeConversationSessionModelSelection = input.initialConversationSessionModelSelection;
   const shouldReturnFullConversationSessionEntriesToRenderer = input.conversationTranscriptHydrationMode !== "paged_transcript";
 
@@ -56,7 +61,7 @@ export function createInteractiveChatConversationSessionBindings(input: {
         const switchedConversationSession = input.conversationSessionStore.switchActiveConversationSession(
           conversationSessionId,
         );
-        activeConversationSessionId = switchedConversationSession.sessionId;
+        input.conversationSessionWriteTarget.conversationSessionId = switchedConversationSession.sessionId;
         if (switchedConversationSession.modelSelection) {
           activeConversationSessionModelSelection = switchedConversationSession.modelSelection;
         }
@@ -80,7 +85,7 @@ export function createInteractiveChatConversationSessionBindings(input: {
           conversationSessionId,
           { replacementModelSelection: activeConversationSessionModelSelection },
         );
-        activeConversationSessionId = activeConversationSessionAfterDelete.sessionId;
+        input.conversationSessionWriteTarget.conversationSessionId = activeConversationSessionAfterDelete.sessionId;
         if (activeConversationSessionAfterDelete.modelSelection) {
           activeConversationSessionModelSelection = activeConversationSessionAfterDelete.modelSelection;
         }
@@ -108,7 +113,7 @@ export function createInteractiveChatConversationSessionBindings(input: {
         const newConversationSession = input.conversationSessionStore.startNewConversationSession({
           modelSelection: activeConversationSessionModelSelection,
         });
-        activeConversationSessionId = newConversationSession.sessionId;
+        input.conversationSessionWriteTarget.conversationSessionId = newConversationSession.sessionId;
         activeConversationSessionModelSelection = newConversationSession.modelSelection ?? activeConversationSessionModelSelection;
         input.conversationHistory.replaceConversationSessionEntries(newConversationSession.conversationSessionEntries);
         logCliDiagnosticEvent(input.diagnosticLogger, "conversation_session.created", {
@@ -129,14 +134,14 @@ export function createInteractiveChatConversationSessionBindings(input: {
         const exportResult = conversationSessionExportModule.writeConversationSessionHtmlExport({
           conversationSessionEntries: input.conversationHistory.listConversationSessionEntries(),
           workspaceRootPath: input.workspaceRootPath,
-          conversationSessionId: activeConversationSessionId,
+          conversationSessionId: input.conversationSessionWriteTarget.conversationSessionId,
           exportDirectoryPath: input.conversationSessionExportDirectoryPath ??
             conversationSessionExportModule.defaultConversationSessionExportDirectoryPath(),
         });
         const openBrowserUrl = input.openBrowserUrl ?? (await import("../browserLauncher.ts")).openBrowserUrl;
         await openBrowserUrl(exportResult.exportFileUrl);
         logCliDiagnosticEvent(input.diagnosticLogger, "conversation_session.exported", {
-          conversationSessionId: activeConversationSessionId,
+          conversationSessionId: input.conversationSessionWriteTarget.conversationSessionId,
           exportFilePath: exportResult.exportFilePath,
         });
         return exportResult;
@@ -145,7 +150,7 @@ export function createInteractiveChatConversationSessionBindings(input: {
         await input.assistantConversationRunner.compactConversationSession(compactionRequest);
         const conversationSessionEntries = input.conversationHistory.listConversationSessionEntries();
         logCliDiagnosticEvent(input.diagnosticLogger, "conversation_session.compacted", {
-          conversationSessionId: activeConversationSessionId,
+          conversationSessionId: input.conversationSessionWriteTarget.conversationSessionId,
           conversationSessionEntryCount: conversationSessionEntries.length,
         });
         return { conversationSessionEntries };
@@ -156,7 +161,7 @@ export function createInteractiveChatConversationSessionBindings(input: {
         const autoCompactionResult = await input.assistantConversationRunner.autoCompactConversationSession(autoCompactionRequest);
         const autoCompactionDecision = autoCompactionResult.decision;
         logCliDiagnosticEvent(input.diagnosticLogger, "conversation_session.auto_compaction_decided", {
-          conversationSessionId: activeConversationSessionId,
+          conversationSessionId: input.conversationSessionWriteTarget.conversationSessionId,
           shouldCompact: autoCompactionDecision.shouldCompact,
           reason: autoCompactionDecision.reason,
           selectedModelId: autoCompactionDecision.selectedModelId,
@@ -175,7 +180,7 @@ export function createInteractiveChatConversationSessionBindings(input: {
         }
 
         logCliDiagnosticEvent(input.diagnosticLogger, "conversation_session.auto_compacted", {
-          conversationSessionId: activeConversationSessionId,
+          conversationSessionId: input.conversationSessionWriteTarget.conversationSessionId,
           conversationSessionEntryCount: autoCompactionResult.conversationSessionEntries.length,
           contextTokensUsed: autoCompactionDecision.contextTokensUsed,
           contextCompactionTriggerTokenCount: autoCompactionDecision.contextCompactionTriggerTokenCount ?? null,
@@ -187,9 +192,12 @@ export function createInteractiveChatConversationSessionBindings(input: {
       },
       onConversationSessionModelSelectionChanged: (modelSelection: ConversationSessionModelSelection) => {
         activeConversationSessionModelSelection = modelSelection;
-        input.conversationSessionStore.saveActiveConversationSessionModelSelection(modelSelection);
+        input.conversationSessionStore.saveConversationSessionModelSelectionForSession({
+          conversationSessionId: input.conversationSessionWriteTarget.conversationSessionId,
+          modelSelection,
+        });
         logCliDiagnosticEvent(input.diagnosticLogger, "conversation_session.model_selection_saved", {
-          conversationSessionId: activeConversationSessionId,
+          conversationSessionId: input.conversationSessionWriteTarget.conversationSessionId,
           selectedModelId: modelSelection.selectedModelId,
           selectedModelDefaultReasoningEffort: modelSelection.selectedModelDefaultReasoningEffort ?? null,
           selectedReasoningEffort: modelSelection.selectedReasoningEffort ?? null,

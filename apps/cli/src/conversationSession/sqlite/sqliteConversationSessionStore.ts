@@ -11,10 +11,13 @@ import type {
 import {
   type ActiveConversationSessionMetadata,
   type ActiveConversationSession,
+  type AppendConversationSessionEntryToSessionInput,
   type ConversationSessionEntryRecordSlice,
   type ConversationSessionEntryRecordSliceLoadRequest,
   type ConversationSessionStore,
   type DeleteConversationSessionInput,
+  type ReplaceConversationSessionEntriesForSessionInput,
+  type SaveConversationSessionModelSelectionForSessionInput,
   type StartNewConversationSessionInput,
 } from "../conversationSessionStore.ts";
 import {
@@ -186,91 +189,92 @@ export class SqliteConversationSessionStore implements ConversationSessionStore 
     }));
   }
 
-  appendConversationSessionEntry(conversationSessionEntry: ConversationSessionEntry): void {
+  appendConversationSessionEntryToSession(input: AppendConversationSessionEntryToSessionInput): void {
     this.runMeasuredStorageOperation({
       operationName: "append_entry",
       transactionKind: "write",
       fields: {
-        conversationSessionEntryKind: conversationSessionEntry.entryKind,
+        conversationSessionId: input.conversationSessionId,
+        conversationSessionEntryKind: input.conversationSessionEntry.entryKind,
         serializedConversationSessionEntryTextLength: this.measureSerializedConversationSessionEntryTextLength(
-          conversationSessionEntry,
+          input.conversationSessionEntry,
         ),
       },
     }, () => this.runImmediateTransaction(() => {
-      const activeConversationSession = this.loadActiveConversationSessionMetadataInTransaction();
+      const conversationSession = this.loadConversationSessionMetadataOrThrow(input.conversationSessionId);
       const recordedConversationSessionEntry = this.recordConversationSessionEntry({
-        conversationSessionEntry,
-        entrySequence: activeConversationSession.conversationSessionEntryCount,
+        conversationSessionEntry: input.conversationSessionEntry,
+        entrySequence: conversationSession.conversationSessionEntryCount,
       });
 
       this.gateway.insertConversationSessionEntry({
-        sessionId: activeConversationSession.sessionId,
+        sessionId: conversationSession.sessionId,
         recordedConversationSessionEntry,
       });
       this.updateConversationSessionSummaryAfterAppendingEntry({
-        activeConversationSession,
-        conversationSessionEntry,
+        conversationSession,
+        conversationSessionEntry: input.conversationSessionEntry,
         entryRecordedAtMs: recordedConversationSessionEntry.recordedAtMs,
       });
-      this.gateway.writeActiveConversationSessionId(activeConversationSession.sessionId);
     }));
   }
 
-  saveActiveConversationSessionModelSelection(modelSelection: ConversationSessionModelSelection): void {
+  saveConversationSessionModelSelectionForSession(input: SaveConversationSessionModelSelectionForSessionInput): void {
     this.runMeasuredStorageOperation({
       operationName: "save_model_selection",
       transactionKind: "write",
       fields: {
-        selectedModelId: modelSelection.selectedModelId,
-        selectedModelDefaultReasoningEffort: modelSelection.selectedModelDefaultReasoningEffort ?? null,
-        selectedReasoningEffort: modelSelection.selectedReasoningEffort ?? null,
+        conversationSessionId: input.conversationSessionId,
+        selectedModelId: input.modelSelection.selectedModelId,
+        selectedModelDefaultReasoningEffort: input.modelSelection.selectedModelDefaultReasoningEffort ?? null,
+        selectedReasoningEffort: input.modelSelection.selectedReasoningEffort ?? null,
       },
     }, () => this.runImmediateTransaction(() => {
-      const activeConversationSession = this.loadActiveConversationSessionMetadataInTransaction();
-      if (areConversationSessionModelSelectionsEqual(activeConversationSession.modelSelection, modelSelection)) {
+      const conversationSession = this.loadConversationSessionMetadataOrThrow(input.conversationSessionId);
+      if (areConversationSessionModelSelectionsEqual(conversationSession.modelSelection, input.modelSelection)) {
         return;
       }
 
       this.gateway.insertConversationSessionModelSelection({
-        sessionId: activeConversationSession.sessionId,
+        sessionId: conversationSession.sessionId,
         recordedAtMs: this.nowMs(),
-        modelSelection,
+        modelSelection: input.modelSelection,
       });
       this.gateway.updateConversationSessionCurrentModelSelection({
-        sessionId: activeConversationSession.sessionId,
-        modelSelection,
+        sessionId: conversationSession.sessionId,
+        modelSelection: input.modelSelection,
       });
     }));
   }
 
-  saveConversationSessionEntries(conversationSessionEntries: readonly ConversationSessionEntry[]): void {
+  replaceConversationSessionEntriesForSession(input: ReplaceConversationSessionEntriesForSessionInput): void {
     this.runMeasuredStorageOperation({
       operationName: "replace_entries",
       transactionKind: "write",
       fields: {
-        conversationSessionEntryCount: conversationSessionEntries.length,
+        conversationSessionId: input.conversationSessionId,
+        conversationSessionEntryCount: input.conversationSessionEntries.length,
         serializedConversationSessionEntriesTextLength: this.measureSerializedConversationSessionEntriesTextLength(
-          conversationSessionEntries,
+          input.conversationSessionEntries,
         ),
       },
     }, () => this.runImmediateTransaction(() => {
-      const activeConversationSession = this.loadActiveConversationSessionMetadataInTransaction();
-      const recordedConversationSessionEntries = conversationSessionEntries.map((conversationSessionEntry, entrySequence) =>
+      const conversationSession = this.loadConversationSessionMetadataOrThrow(input.conversationSessionId);
+      const recordedConversationSessionEntries = input.conversationSessionEntries.map((conversationSessionEntry, entrySequence) =>
         this.recordConversationSessionEntry({ conversationSessionEntry, entrySequence })
       );
       const latestRecordedConversationSessionEntry = recordedConversationSessionEntries.at(-1);
 
       this.gateway.replaceConversationSessionEntries({
-        sessionId: activeConversationSession.sessionId,
+        sessionId: conversationSession.sessionId,
         recordedConversationSessionEntries,
       });
       this.gateway.updateConversationSessionSummary({
-        sessionId: activeConversationSession.sessionId,
-        title: summarizeConversationSessionTitle(conversationSessionEntries),
-        updatedAtMs: latestRecordedConversationSessionEntry?.recordedAtMs ?? activeConversationSession.createdAtMs,
-        conversationSessionEntryCount: conversationSessionEntries.length,
+        sessionId: conversationSession.sessionId,
+        title: summarizeConversationSessionTitle(input.conversationSessionEntries),
+        updatedAtMs: latestRecordedConversationSessionEntry?.recordedAtMs ?? conversationSession.createdAtMs,
+        conversationSessionEntryCount: input.conversationSessionEntries.length,
       });
-      this.gateway.writeActiveConversationSessionId(activeConversationSession.sessionId);
     }));
   }
 
@@ -552,16 +556,16 @@ export class SqliteConversationSessionStore implements ConversationSessionStore 
   }
 
   private updateConversationSessionSummaryAfterAppendingEntry(input: {
-    activeConversationSession: PersistedConversationSessionMetadata;
+    conversationSession: PersistedConversationSessionMetadata;
     conversationSessionEntry: ConversationSessionEntry;
     entryRecordedAtMs: number;
   }): void {
-    const nextEntryCount = input.activeConversationSession.conversationSessionEntryCount + 1;
-    const nextTitle = input.activeConversationSession.conversationSessionEntryCount === 0
+    const nextEntryCount = input.conversationSession.conversationSessionEntryCount + 1;
+    const nextTitle = input.conversationSession.conversationSessionEntryCount === 0
       ? summarizeConversationSessionTitle([input.conversationSessionEntry])
-      : input.activeConversationSession.title;
+      : input.conversationSession.title;
     this.gateway.updateConversationSessionSummary({
-      sessionId: input.activeConversationSession.sessionId,
+      sessionId: input.conversationSession.sessionId,
       title: nextTitle,
       updatedAtMs: input.entryRecordedAtMs,
       conversationSessionEntryCount: nextEntryCount,

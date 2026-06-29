@@ -24,6 +24,21 @@ export type DeleteConversationSessionInput = {
   replacementModelSelection?: ConversationSessionModelSelection | undefined;
 };
 
+export type AppendConversationSessionEntryToSessionInput = {
+  conversationSessionId: string;
+  conversationSessionEntry: ConversationSessionEntry;
+};
+
+export type SaveConversationSessionModelSelectionForSessionInput = {
+  conversationSessionId: string;
+  modelSelection: ConversationSessionModelSelection;
+};
+
+export type ReplaceConversationSessionEntriesForSessionInput = {
+  conversationSessionId: string;
+  conversationSessionEntries: readonly ConversationSessionEntry[];
+};
+
 export type ConversationSessionEntryRecord = {
   entrySequence: number;
   conversationSessionEntry: ConversationSessionEntry;
@@ -55,9 +70,9 @@ export type ConversationSessionStore = {
   loadConversationSessionEntryRecords(
     request: ConversationSessionEntryRecordSliceLoadRequest,
   ): ConversationSessionEntryRecordSlice;
-  appendConversationSessionEntry(conversationSessionEntry: ConversationSessionEntry): void;
-  saveActiveConversationSessionModelSelection(modelSelection: ConversationSessionModelSelection): void;
-  saveConversationSessionEntries(conversationSessionEntries: readonly ConversationSessionEntry[]): void;
+  appendConversationSessionEntryToSession(input: AppendConversationSessionEntryToSessionInput): void;
+  saveConversationSessionModelSelectionForSession(input: SaveConversationSessionModelSelectionForSessionInput): void;
+  replaceConversationSessionEntriesForSession(input: ReplaceConversationSessionEntriesForSessionInput): void;
   startNewConversationSession(input?: StartNewConversationSessionInput): ActiveConversationSession;
   listConversationSessions(): readonly ConversationSessionSummary[];
   switchActiveConversationSession(sessionId: string): ActiveConversationSession;

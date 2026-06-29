@@ -1482,10 +1482,38 @@ test("runInteractiveChat keeps full runtime history while giving the renderer on
       assistantMessageText: "Previous answer",
     },
   ];
-  const savedConversationSessionEntries: ConversationSessionEntry[][] = [];
+  const switchedConversationSessionEntries: ConversationSessionEntry[] = [
+    {
+      entryKind: "user_prompt",
+      promptText: "Switched prompt",
+      modelFacingPromptText: "Switched prompt",
+    },
+  ];
+  const savedConversationSessionWrites: Array<{
+    conversationSessionId: string;
+    conversationSessionEntries: ConversationSessionEntry[];
+  }> = [];
   const savedModelSelections: ConversationSessionModelSelection[] = [];
   let fullConversationSessionEntryLoadCount = 0;
   let activeModelSelection: ConversationSessionModelSelection | undefined;
+  const persistedConversationSessionEntriesById = new Map<string, ConversationSessionEntry[]>([
+    ["session-a", [...initialConversationSessionEntries]],
+    ["session-b", [...switchedConversationSessionEntries]],
+  ]);
+  const readPersistedConversationSessionEntries = (conversationSessionId: string): ConversationSessionEntry[] => [
+    ...(persistedConversationSessionEntriesById.get(conversationSessionId) ?? []),
+  ];
+  const writePersistedConversationSessionEntries = (input: {
+    conversationSessionId: string;
+    conversationSessionEntries: readonly ConversationSessionEntry[];
+  }): void => {
+    const conversationSessionEntries = [...input.conversationSessionEntries];
+    persistedConversationSessionEntriesById.set(input.conversationSessionId, conversationSessionEntries);
+    savedConversationSessionWrites.push({
+      conversationSessionId: input.conversationSessionId,
+      conversationSessionEntries,
+    });
+  };
   let listedConversationSessions: ConversationSessionSummary[] = [
     {
       sessionId: "session-a",
@@ -1508,57 +1536,66 @@ test("runInteractiveChat keeps full runtime history while giving the renderer on
     loadActiveConversationSessionMetadata: () => ({
       sessionId: "session-a",
       modelSelection: activeModelSelection,
-      conversationSessionEntryCount: initialConversationSessionEntries.length,
+      conversationSessionEntryCount: readPersistedConversationSessionEntries("session-a").length,
     }),
     loadActiveConversationSession: () => ({
       sessionId: "session-a",
       modelSelection: activeModelSelection,
-      conversationSessionEntries: initialConversationSessionEntries,
+      conversationSessionEntries: readPersistedConversationSessionEntries("session-a"),
     }),
     loadConversationSessionEntries: (conversationSessionId) => {
+      const requestedConversationSessionId = conversationSessionId ?? "session-a";
       fullConversationSessionEntryLoadCount += 1;
-      expect(conversationSessionId).toBe("session-a");
-      return initialConversationSessionEntries;
+      expect(requestedConversationSessionId).toBe("session-a");
+      return readPersistedConversationSessionEntries(requestedConversationSessionId);
     },
-    loadConversationSessionEntryRecords: (request) => ({
-      conversationSessionId: request.conversationSessionId ?? "session-a",
-      entryRecords: initialConversationSessionEntries.map((conversationSessionEntry, entrySequence) => ({
-        entrySequence,
-        conversationSessionEntry,
-      })),
-      hasOlderEntries: false,
-      hasNewerEntries: false,
-      latestCompactionSummaryEntrySequence: undefined,
-    }),
-    appendConversationSessionEntry: (conversationSessionEntry) => {
-      savedConversationSessionEntries.push([...initialConversationSessionEntries, conversationSessionEntry]);
+    loadConversationSessionEntryRecords: (request) => {
+      const conversationSessionId = request.conversationSessionId ?? "session-a";
+      return {
+        conversationSessionId,
+        entryRecords: readPersistedConversationSessionEntries(conversationSessionId).map((
+          conversationSessionEntry,
+          entrySequence,
+        ) => ({
+          entrySequence,
+          conversationSessionEntry,
+        })),
+        hasOlderEntries: false,
+        hasNewerEntries: false,
+        latestCompactionSummaryEntrySequence: undefined,
+      };
     },
-    saveConversationSessionEntries: (conversationSessionEntries) => {
-      savedConversationSessionEntries.push([...conversationSessionEntries]);
+    appendConversationSessionEntryToSession: (input) => {
+      writePersistedConversationSessionEntries({
+        conversationSessionId: input.conversationSessionId,
+        conversationSessionEntries: [
+          ...readPersistedConversationSessionEntries(input.conversationSessionId),
+          input.conversationSessionEntry,
+        ],
+      });
     },
-    saveActiveConversationSessionModelSelection: (modelSelection) => {
+    replaceConversationSessionEntriesForSession: (input) => {
+      writePersistedConversationSessionEntries(input);
+    },
+    saveConversationSessionModelSelectionForSession: (input) => {
+      const modelSelection = input.modelSelection;
       activeModelSelection = modelSelection;
       savedModelSelections.push(modelSelection);
     },
     startNewConversationSession: (startNewConversationSessionInput) => {
       activeModelSelection = startNewConversationSessionInput?.modelSelection;
+      persistedConversationSessionEntriesById.set("session-new", []);
       return {
         sessionId: "session-new",
         modelSelection: activeModelSelection,
-        conversationSessionEntries: [],
+        conversationSessionEntries: readPersistedConversationSessionEntries("session-new"),
       };
     },
     listConversationSessions: () => listedConversationSessions,
     switchActiveConversationSession: (sessionId) => ({
       sessionId,
       modelSelection: undefined,
-      conversationSessionEntries: [
-        {
-          entryKind: "user_prompt",
-          promptText: "Switched prompt",
-          modelFacingPromptText: "Switched prompt",
-        },
-      ],
+      conversationSessionEntries: readPersistedConversationSessionEntries(sessionId),
     }),
     switchActiveConversationSessionMetadata: (sessionId) => ({
       sessionId,
@@ -1569,10 +1606,11 @@ test("runInteractiveChat keeps full runtime history while giving the renderer on
       listedConversationSessions = listedConversationSessions.filter(
         (conversationSession) => conversationSession.sessionId !== sessionId,
       );
+      persistedConversationSessionEntriesById.delete(sessionId);
       return {
         sessionId: "session-a",
         modelSelection: undefined,
-        conversationSessionEntries: initialConversationSessionEntries,
+        conversationSessionEntries: readPersistedConversationSessionEntries("session-a"),
       };
     },
     deleteConversationSessionAndLoadActiveMetadata: (sessionId) => {
@@ -1663,15 +1701,18 @@ test("runInteractiveChat keeps full runtime history while giving the renderer on
     modelFacingPromptText: "Next prompt",
   });
 
-  expect(savedConversationSessionEntries).toEqual<ConversationSessionEntry[][]>([
-    [
-      ...initialConversationSessionEntries,
-      {
-        entryKind: "user_prompt",
-        promptText: "Next prompt",
-        modelFacingPromptText: "Next prompt",
-      },
-    ],
+  expect(savedConversationSessionWrites).toEqual([
+    {
+      conversationSessionId: "session-a",
+      conversationSessionEntries: [
+        ...initialConversationSessionEntries,
+        {
+          entryKind: "user_prompt",
+          promptText: "Next prompt",
+          modelFacingPromptText: "Next prompt",
+        },
+      ],
+    },
   ]);
 
   if (!capturedConversationRuntime || !capturedAutoCompactCurrentConversationSession) {
@@ -1756,17 +1797,59 @@ test("runInteractiveChat keeps full runtime history while giving the renderer on
   capturedClearConversation?.();
   expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual([]);
 
+  capturedConversationRuntime?.conversationHistory.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "New session prompt",
+    modelFacingPromptText: "New session prompt",
+  });
+  expect(savedConversationSessionWrites.at(-1)).toEqual({
+    conversationSessionId: "session-new",
+    conversationSessionEntries: [
+      {
+        entryKind: "user_prompt",
+        promptText: "New session prompt",
+        modelFacingPromptText: "New session prompt",
+      },
+    ],
+  });
+
   await expect(Promise.resolve(capturedSwitchConversationSession?.("session-b"))).resolves.toEqual({
     conversationSessionId: "session-b",
   });
   expect(fullConversationSessionEntryLoadCount).toBe(1);
-  expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual([
+  expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual(switchedConversationSessionEntries);
+
+  capturedConversationRuntime?.conversationHistory.appendConversationSessionEntry({
+    entryKind: "user_prompt",
+    promptText: "Prompt after switch",
+    modelFacingPromptText: "Prompt after switch",
+  });
+  expect(savedConversationSessionWrites.at(-1)).toEqual({
+    conversationSessionId: "session-b",
+    conversationSessionEntries: [
+      ...switchedConversationSessionEntries,
+      {
+        entryKind: "user_prompt",
+        promptText: "Prompt after switch",
+        modelFacingPromptText: "Prompt after switch",
+      },
+    ],
+  });
+
+  const expectedSessionAEntriesAfterRuntimeAppends: ConversationSessionEntry[] = [
+    ...initialConversationSessionEntries,
     {
       entryKind: "user_prompt",
-      promptText: "Switched prompt",
-      modelFacingPromptText: "Switched prompt",
+      promptText: "Next prompt",
+      modelFacingPromptText: "Next prompt",
     },
-  ]);
+    {
+      entryKind: "conversation_compaction_summary",
+      summaryText: "Goal: continue after automatic compaction.",
+      compactedEntryCount: 3,
+      retainedRecentConversationSessionEntryCount: 0,
+    },
+  ];
 
   await expect(Promise.resolve(capturedDeleteConversationSession?.("session-b"))).resolves.toEqual({
     deletedConversationSessionId: "session-b",
@@ -1782,7 +1865,9 @@ test("runInteractiveChat keeps full runtime history while giving the renderer on
     ],
   });
   expect(fullConversationSessionEntryLoadCount).toBe(1);
-  expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual(initialConversationSessionEntries);
+  expect(capturedConversationRuntime?.conversationHistory.listConversationSessionEntries()).toEqual(
+    expectedSessionAEntriesAfterRuntimeAppends,
+  );
 });
 
 test("SqliteConversationSessionStore uses a workspace-scoped default path and prompt cache key", async () => {
@@ -1892,12 +1977,12 @@ function createConversationSessionStoreStub(input: {
       hasNewerEntries: false,
       latestCompactionSummaryEntrySequence: undefined,
     }),
-    appendConversationSessionEntry: () => {},
-    saveActiveConversationSessionModelSelection: (modelSelection) => {
-      activeModelSelection = modelSelection;
-      savedModelSelections.push(modelSelection);
+    appendConversationSessionEntryToSession: () => {},
+    saveConversationSessionModelSelectionForSession: (input) => {
+      activeModelSelection = input.modelSelection;
+      savedModelSelections.push(input.modelSelection);
     },
-    saveConversationSessionEntries: () => {},
+    replaceConversationSessionEntriesForSession: () => {},
     startNewConversationSession: (startNewConversationSessionInput) => {
       activeModelSelection = startNewConversationSessionInput?.modelSelection;
       return {
