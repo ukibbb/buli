@@ -466,14 +466,7 @@ test("runCheckMcp reports a missing filtered MCP server", async () => {
 
 test("runLogin can use an injected browser login dependency", async () => {
   await expect(runLogin({
-    loginWithBrowser: async () => ({
-      provider: "openai",
-      method: "oauth",
-      accessToken: "access-token",
-      refreshToken: "refresh-token",
-      expiresAt: Date.now() + 60_000,
-      accountId: "acct_test",
-    }),
+    loginWithBrowser: async () => createValidOpenAiAuth("acct_test"),
   })).resolves.toBe("OpenAI login complete for account acct_test");
 });
 
@@ -488,14 +481,7 @@ test("runInteractiveChat returns a clean message when stdin is not a TTY", async
   const dir = await mkdtemp(join(tmpdir(), "buli-cli-chat-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
 
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   await expect(runInteractiveChat({ store, stdin: { isTTY: false }, environment: {} })).resolves.toBe(
     "Interactive chat requires a TTY. Run `buli` in a terminal.",
@@ -574,14 +560,7 @@ test("runInteractiveChat applies concurrency and task subagent environment overr
   const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
   let capturedConversationRuntime: AssistantConversationRuntime | undefined;
 
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   const output = await runInteractiveChat({
     store,
@@ -731,14 +710,7 @@ test("runInteractiveChat applies code-provided registries and model profile reso
     | ReturnType<AssistantConversationRuntime["listPrimaryAgentDisplayMetadata"]>
     | undefined;
 
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   const output = await runInteractiveChat({
     store,
@@ -928,14 +900,7 @@ test("runInteractiveChat applies a single assistant runtime configuration object
     | ReturnType<AssistantConversationRuntime["listPrimaryAgentDisplayMetadata"]>
     | undefined;
 
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   const output = await runInteractiveChat({
     store,
@@ -976,14 +941,7 @@ test("runInteractiveChat composes generic MCP tools into the default assistant r
   let capturedStartupIntegrationNotices: RenderChatScreenInTerminalInput["startupIntegrationNotices"];
   let disposeCount = 0;
 
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   const output = await runInteractiveChat({
     store,
@@ -1085,14 +1043,7 @@ test("runInteractiveChat keeps starting when a configured MCP server is unavaila
   let capturedConversationRuntime: AssistantConversationRuntime | undefined;
   let capturedStartupIntegrationNotices: RenderChatScreenInTerminalInput["startupIntegrationNotices"];
 
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   const output = await runInteractiveChat({
     store,
@@ -1153,14 +1104,7 @@ test("runInteractiveChat uses the prompt-context root environment override", asy
   });
   let capturedConversationRuntime: AssistantConversationRuntime | undefined;
 
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   try {
     const output = await runInteractiveChat({
@@ -1193,14 +1137,7 @@ test("runInteractiveChat passes the known default model reasoning effort to the 
     selectedReasoningEffort: ReasoningEffort | undefined;
   } | undefined;
 
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   const output = await runInteractiveChat({
     store,
@@ -1243,14 +1180,7 @@ test("runInteractiveChat uses persisted session model selection before app defau
     selectedReasoningEffort: ReasoningEffort | undefined;
   } | undefined;
 
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   const output = await runInteractiveChat({
     store,
@@ -1288,14 +1218,7 @@ test("runInteractiveChat skips saving unchanged startup model selection", async 
     activeModelSelection: persistedModelSelection,
   });
 
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   const output = await runInteractiveChat({
     store,
@@ -1326,14 +1249,7 @@ test("runInteractiveChat lets startup model flags override persisted session set
     selectedReasoningEffort: ReasoningEffort | undefined;
   } | undefined;
 
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   const output = await runInteractiveChat({
     selectedModelId: "gpt-5.5",
@@ -1370,14 +1286,7 @@ test("runInteractiveChat restores console logging after the renderer exits", asy
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
   const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
   const originalConsoleLog = console.log;
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   const output = await runInteractiveChat({
     store,
@@ -1403,14 +1312,7 @@ test("runInteractiveChat writes startup timing diagnostics", async () => {
   const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
   const logFilePath = join(dir, "startup.log");
 
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   const output = await runInteractiveChat({
     store,
@@ -1441,14 +1343,7 @@ test("runInteractiveChat restores console logging when the renderer throws", asy
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
   const conversationSessionStoreStub = createConversationSessionStoreStub({ directoryPath: dir });
   const originalConsoleLog = console.log;
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   await expect(runInteractiveChat({
     store,
@@ -1647,14 +1542,7 @@ test("runInteractiveChat keeps full runtime history while giving the renderer on
     | NonNullable<RenderChatScreenInTerminalInput["loadConversationTranscriptEntryRecords"]>
     | undefined;
   const openedBrowserUrls: string[] = [];
-  await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
-    accountId: "acct_123",
-  });
+  await store.saveOpenAi(createValidOpenAiAuth());
 
   const output = await runInteractiveChat({
     store,
@@ -1939,6 +1827,16 @@ function createFakeMcpRuntimeIntegration(input: {
     dispose: async () => {
       await input.dispose?.();
     },
+  };
+}
+
+function createValidOpenAiAuth(accountId = "acct_123") {
+  return {
+    type: "oauth" as const,
+    access: "access-token",
+    refresh: "refresh-token",
+    expires: Date.now() + 60_000,
+    accountId,
   };
 }
 

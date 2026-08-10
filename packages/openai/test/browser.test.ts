@@ -71,12 +71,12 @@ test("loginWithBrowser completes the OAuth flow and stores auth", async () => {
       },
     });
 
-    expect(auth.accessToken).toBe("access-token");
-    expect(auth.refreshToken).toBe("refresh-token");
+    expect(auth.access).toBe("access-token");
+    expect(auth.refresh).toBe("refresh-token");
     expect(auth.accountId).toBe("acct_123");
 
     const stored = await store.loadOpenAi();
-    expect(stored?.accessToken).toBe("access-token");
+    expect(stored?.access).toBe("access-token");
     expect(stored?.accountId).toBe("acct_123");
   } finally {
     await new Promise<void>((resolve, reject) => {

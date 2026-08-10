@@ -70,7 +70,7 @@ async function loadOpenAiAuth(input: {
 
 function createRequestHeaders(auth: OpenAiAuthInfo, accept: string): Headers {
   const headers = new Headers({
-    authorization: `Bearer ${auth.accessToken}`,
+    authorization: `Bearer ${auth.access}`,
     Accept: accept,
     originator: "buli",
     "User-Agent": "buli/dev",
@@ -125,7 +125,7 @@ export class OpenAiProvider {
     const auth = await this.loadCachedOpenAiAuth(input);
     logOpenAiDiagnosticEvent(this.diagnosticLogger, "auth.loaded_for_model_list", {
       hasAccountId: auth.accountId !== undefined,
-      expiresInMs: Math.max(0, auth.expiresAt - Date.now()),
+      expiresInMs: Math.max(0, auth.expires - Date.now()),
     });
 
     const modelListRetryIterator = requestOpenAiHttpResponseWithRetries({
@@ -200,7 +200,7 @@ export class OpenAiProvider {
           compactionSource: input.compactionSource ?? null,
           conversationTurnId: input.conversationTurnId ?? null,
           hasAccountId: auth.accountId !== undefined,
-          expiresInMs: Math.max(0, auth.expiresAt - Date.now()),
+          expiresInMs: Math.max(0, auth.expires - Date.now()),
         });
 
         const headers = createRequestHeaders(auth, "text/event-stream");
@@ -252,7 +252,7 @@ export class OpenAiProvider {
   } = {}): Promise<OpenAiAuthInfo> {
     if (this.cachedOpenAiAuth && isOpenAiAuthFreshEnough(this.cachedOpenAiAuth)) {
       logOpenAiDiagnosticEvent(this.diagnosticLogger, "auth.cache_hit", {
-        expiresInMs: Math.max(0, this.cachedOpenAiAuth.expiresAt - Date.now()),
+        expiresInMs: Math.max(0, this.cachedOpenAiAuth.expires - Date.now()),
       });
       return this.cachedOpenAiAuth;
     }

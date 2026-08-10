@@ -163,7 +163,7 @@ test("refreshAccessToken posts the refresh token form", async () => {
     },
     async (issuer) => {
       const tokens = await refreshAccessToken({
-        refreshToken: "refresh-token",
+        refresh: "refresh-token",
         issuer,
       });
 
@@ -178,7 +178,7 @@ test("refreshAccessToken aborts token fetches when the caller aborts", async () 
   const receivedAbortSignals: AbortSignal[] = [];
 
   await expect(refreshAccessToken({
-    refreshToken: "refresh-token",
+    refresh: "refresh-token",
     issuer: "https://auth.example.com",
     fetchImpl: createAbortablePendingTokenFetchImpl({
       receivedAbortSignals,
@@ -207,9 +207,9 @@ test("toAuthInfo converts token responses into stored auth", () => {
     accountId: "acct_123",
   });
 
-  expect(auth.provider).toBe("openai");
+  expect(auth.type).toBe("oauth");
   expect(auth.accountId).toBe("acct_123");
-  expect(auth.expiresAt).toBe(1_700_000_000_000 + 1_800_000);
+  expect(auth.expires).toBe(1_700_000_000_000 + 1_800_000);
 });
 
 test("refreshStoredAuth refreshes and persists an expired token", async () => {
@@ -217,11 +217,10 @@ test("refreshStoredAuth refreshes and persists an expired token", async () => {
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
 
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "old-access",
-    refreshToken: "old-refresh",
-    expiresAt: 10,
+    type: "oauth",
+    access: "old-access",
+    refresh: "old-refresh",
+    expires: 10,
     accountId: "acct_123",
   });
 
@@ -242,13 +241,13 @@ test("refreshStoredAuth refreshes and persists an expired token", async () => {
         now: 100,
       });
 
-      expect(auth?.accessToken).toBe("new-access");
-      expect(auth?.refreshToken).toBe("new-refresh");
+      expect(auth?.access).toBe("new-access");
+      expect(auth?.refresh).toBe("new-refresh");
     },
   );
 
   const stored = await store.loadOpenAi();
-  expect(stored?.accessToken).toBe("new-access");
+  expect(stored?.access).toBe("new-access");
   expect(stored?.accountId).toBe("acct_123");
 });
 
@@ -257,11 +256,10 @@ test("refreshStoredAuth preserves the stored refresh token when refresh omits a 
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
 
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "old-access",
-    refreshToken: "old-refresh",
-    expiresAt: 10,
+    type: "oauth",
+    access: "old-access",
+    refresh: "old-refresh",
+    expires: 10,
     accountId: "acct_123",
   });
 
@@ -277,8 +275,8 @@ test("refreshStoredAuth preserves the stored refresh token when refresh omits a 
         now: 100,
       });
 
-      expect(auth?.accessToken).toBe("new-access");
-      expect(auth?.refreshToken).toBe("old-refresh");
+      expect(auth?.access).toBe("new-access");
+      expect(auth?.refresh).toBe("old-refresh");
     },
   );
 });
@@ -288,11 +286,10 @@ test("refreshStoredAuth refreshes before expiry using a safety window", async ()
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
 
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "old-access",
-    refreshToken: "old-refresh",
-    expiresAt: 1_000 + 60_000,
+    type: "oauth",
+    access: "old-access",
+    refresh: "old-refresh",
+    expires: 1_000 + 60_000,
   });
 
   await withTokenServer(
@@ -308,8 +305,8 @@ test("refreshStoredAuth refreshes before expiry using a safety window", async ()
         now: 1_000,
       });
 
-      expect(auth?.accessToken).toBe("new-access");
-      expect(auth?.refreshToken).toBe("new-refresh");
+      expect(auth?.access).toBe("new-access");
+      expect(auth?.refresh).toBe("new-refresh");
     },
   );
 });
@@ -319,22 +316,20 @@ test("refreshStoredAuth does not overwrite credentials refreshed by another proc
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
 
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "old-access",
-    refreshToken: "old-refresh",
-    expiresAt: 10,
+    type: "oauth",
+    access: "old-access",
+    refresh: "old-refresh",
+    expires: 10,
     accountId: "acct_123",
   });
 
   const fetchImpl: typeof fetch = Object.assign(
     async () => {
       await store.saveOpenAi({
-        provider: "openai",
-        method: "oauth",
-        accessToken: "newer-access",
-        refreshToken: "newer-refresh",
-        expiresAt: 1_000_000,
+        type: "oauth",
+        access: "newer-access",
+        refresh: "newer-refresh",
+        expires: 1_000_000,
         accountId: "acct_123",
       });
       return new Response(JSON.stringify({
@@ -353,11 +348,11 @@ test("refreshStoredAuth does not overwrite credentials refreshed by another proc
     now: 100,
   });
 
-  expect(auth?.accessToken).toBe("newer-access");
-  expect(auth?.refreshToken).toBe("newer-refresh");
+  expect(auth?.access).toBe("newer-access");
+  expect(auth?.refresh).toBe("newer-refresh");
   expect(await store.loadOpenAi()).toMatchObject({
-    accessToken: "newer-access",
-    refreshToken: "newer-refresh",
+    access: "newer-access",
+    refresh: "newer-refresh",
   });
 });
 
@@ -367,11 +362,10 @@ test("refreshStoredAuth refreshes a stale credential snapshot written by another
   const requestedRefreshTokens: string[] = [];
 
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "old-access",
-    refreshToken: "old-refresh",
-    expiresAt: 10,
+    type: "oauth",
+    access: "old-access",
+    refresh: "old-refresh",
+    expires: 10,
     accountId: "acct_123",
   });
 
@@ -381,11 +375,10 @@ test("refreshStoredAuth refreshes a stale credential snapshot written by another
       requestedRefreshTokens.push(body.get("refresh_token") ?? "");
       if (requestedRefreshTokens.length === 1) {
         await store.saveOpenAi({
-          provider: "openai",
-          method: "oauth",
-          accessToken: "concurrent-stale-access",
-          refreshToken: "concurrent-stale-refresh",
-          expiresAt: 20,
+          type: "oauth",
+          access: "concurrent-stale-access",
+          refresh: "concurrent-stale-refresh",
+          expires: 20,
           accountId: "acct_123",
         });
       }
@@ -407,9 +400,9 @@ test("refreshStoredAuth refreshes a stale credential snapshot written by another
   });
 
   expect(requestedRefreshTokens).toEqual(["old-refresh", "concurrent-stale-refresh"]);
-  expect(auth?.accessToken).toBe("refreshed-2");
+  expect(auth?.access).toBe("refreshed-2");
   expect(await store.loadOpenAi()).toMatchObject({
-    accessToken: "refreshed-2",
-    refreshToken: "refresh-2",
+    access: "refreshed-2",
+    refresh: "refresh-2",
   });
 });

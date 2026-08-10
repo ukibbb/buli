@@ -136,11 +136,10 @@ async function createFreshOpenAiAuthStore(testDirectoryPrefix: string): Promise<
   const dir = await mkdtemp(join(tmpdir(), testDirectoryPrefix));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 600_000,
+    type: "oauth",
+    access: "access-token",
+    refresh: "refresh-token",
+    expires: Date.now() + 600_000,
     accountId: "acct_123",
   });
   return store;
@@ -220,11 +219,10 @@ test("OpenAiProvider.listAvailableAssistantModels sends auth headers and maps th
   const dir = await mkdtemp(join(tmpdir(), "buli-openai-models-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 600_000,
+    type: "oauth",
+    access: "access-token",
+    refresh: "refresh-token",
+    expires: Date.now() + 600_000,
     accountId: "acct_123",
   });
 
@@ -534,11 +532,10 @@ test("OpenAiProvider.listAvailableAssistantModels surfaces the backend error mes
   const dir = await mkdtemp(join(tmpdir(), "buli-openai-models-error-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 600_000,
+    type: "oauth",
+    access: "access-token",
+    refresh: "refresh-token",
+    expires: Date.now() + 600_000,
   });
 
   const server = createServer((_request, response) => {

@@ -447,11 +447,10 @@ test("runInteractiveChat can use an external provider host command without OpenA
 
 function createValidOpenAiAuth() {
   return {
-    provider: "openai" as const,
-    method: "oauth" as const,
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 60_000,
+    type: "oauth" as const,
+    access: "access-token",
+    refresh: "refresh-token",
+    expires: Date.now() + 60_000,
     accountId: "acct_123",
   };
 }

@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import {
+  LegacyOpenAiAuthStoreSchema,
   OpenAiAuthInfoSchema,
   OpenAiAuthStoreSchema,
   type OpenAiAuthInfo,
@@ -23,12 +24,38 @@ export class OpenAiAuthStore {
   async load(): Promise<OpenAiAuthStoreData> {
     try {
       const text = await readFile(this.filePath, "utf8");
-      return OpenAiAuthStoreSchema.parse(JSON.parse(text));
+      const value: unknown = JSON.parse(text);
+      const currentStore = OpenAiAuthStoreSchema.safeParse(value);
+      if (currentStore.success) {
+        return currentStore.data;
+      }
+
+      const legacyStore = LegacyOpenAiAuthStoreSchema.safeParse(value);
+      if (!legacyStore.success) {
+        return OpenAiAuthStoreSchema.parse(value);
+      }
+
+      const migratedStore = OpenAiAuthStoreSchema.parse({
+        ...(legacyStore.data.openai
+          ? {
+              openai: {
+                type: "oauth",
+                access: legacyStore.data.openai.accessToken,
+                refresh: legacyStore.data.openai.refreshToken,
+                expires: legacyStore.data.openai.expiresAt,
+                ...(legacyStore.data.openai.accountId
+                  ? { accountId: legacyStore.data.openai.accountId }
+                  : {}),
+              },
+            }
+          : {}),
+      });
+      await this.writeStore(migratedStore);
+      return migratedStore;
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         return OpenAiAuthStoreSchema.parse({});
       }
-
       throw error;
     }
   }
@@ -43,6 +70,10 @@ export class OpenAiAuthStore {
       ...(await this.load()),
       openai: OpenAiAuthInfoSchema.parse(auth),
     });
+    await this.writeStore(next);
+  }
+
+  private async writeStore(store: OpenAiAuthStoreData): Promise<void> {
     const authDirectoryPath = dirname(this.filePath);
     const temporaryFilePath = join(
       authDirectoryPath,
@@ -52,7 +83,7 @@ export class OpenAiAuthStore {
     await mkdir(authDirectoryPath, { recursive: true, mode: 0o700 });
     await chmod(authDirectoryPath, 0o700);
     try {
-      await writeFile(temporaryFilePath, JSON.stringify(next, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+      await writeFile(temporaryFilePath, JSON.stringify(store, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
       await chmod(temporaryFilePath, 0o600);
       await rename(temporaryFilePath, this.filePath);
       await chmod(this.filePath, 0o600);

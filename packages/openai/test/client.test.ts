@@ -176,11 +176,10 @@ test("OpenAiProvider reuses fresh auth across provider requests", async () => {
   );
 
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "fresh-access",
-    refreshToken: "fresh-refresh",
-    expiresAt: Date.now() + 60 * 60 * 1000,
+    type: "oauth",
+    access: "fresh-access",
+    refresh: "fresh-refresh",
+    expires: Date.now() + 60 * 60 * 1000,
     accountId: "acct_123",
   });
   const provider = new OpenAiProvider({

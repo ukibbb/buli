@@ -2,11 +2,10 @@ import { z } from "zod";
 
 export const OpenAiAuthInfoSchema = z
   .object({
-    provider: z.literal("openai"),
-    method: z.literal("oauth"),
-    accessToken: z.string().min(1),
-    refreshToken: z.string().min(1),
-    expiresAt: z.number().int().nonnegative(),
+    type: z.literal("oauth"),
+    access: z.string().min(1),
+    refresh: z.string().min(1),
+    expires: z.number().int().nonnegative(),
     accountId: z.string().min(1).optional(),
   })
   .strict();
@@ -19,3 +18,19 @@ export const OpenAiAuthStoreSchema = z
 
 export type OpenAiAuthInfo = z.infer<typeof OpenAiAuthInfoSchema>;
 export type OpenAiAuthStoreData = z.infer<typeof OpenAiAuthStoreSchema>;
+
+export const LegacyOpenAiAuthStoreSchema = z
+  .object({
+    openai: z
+      .object({
+        provider: z.literal("openai"),
+        method: z.literal("oauth"),
+        accessToken: z.string().min(1),
+        refreshToken: z.string().min(1),
+        expiresAt: z.number().int().nonnegative(),
+        accountId: z.string().min(1).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();

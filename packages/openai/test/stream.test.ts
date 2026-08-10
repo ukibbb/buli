@@ -1986,11 +1986,10 @@ test("OpenAiProvider sends auth headers and streams assistant response provider 
   const dir = await mkdtemp(join(tmpdir(), "buli-openai-stream-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 600_000,
+    type: "oauth",
+    access: "access-token",
+    refresh: "refresh-token",
+    expires: Date.now() + 600_000,
     accountId: "acct_123",
   });
 
@@ -2097,11 +2096,10 @@ test("OpenAiProvider includes reasoning effort when one is selected", async () =
   const dir = await mkdtemp(join(tmpdir(), "buli-openai-stream-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 600_000,
+    type: "oauth",
+    access: "access-token",
+    refresh: "refresh-token",
+    expires: Date.now() + 600_000,
   });
 
   const requests: string[] = [];
@@ -2171,11 +2169,10 @@ test("OpenAiProvider continues the same turn after function_call_output", async 
   const dir = await mkdtemp(join(tmpdir(), "buli-openai-stream-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 600_000,
+    type: "oauth",
+    access: "access-token",
+    refresh: "refresh-token",
+    expires: Date.now() + 600_000,
   });
 
   const requests: string[] = [];
@@ -2296,11 +2293,10 @@ test("OpenAiProvider includes backend error details when the request fails", asy
   const dir = await mkdtemp(join(tmpdir(), "buli-openai-stream-"));
   const store = new OpenAiAuthStore({ filePath: join(dir, "auth.json") });
   await store.saveOpenAi({
-    provider: "openai",
-    method: "oauth",
-    accessToken: "access-token",
-    refreshToken: "refresh-token",
-    expiresAt: Date.now() + 600_000,
+    type: "oauth",
+    access: "access-token",
+    refresh: "refresh-token",
+    expires: Date.now() + 600_000,
   });
 
   const server = createServer((_request, response) => {

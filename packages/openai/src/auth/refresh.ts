@@ -64,7 +64,7 @@ export async function exchangeAuthorizationCode(input: {
 }
 
 export async function refreshAccessToken(input: {
-  refreshToken: string;
+  refresh: string;
   issuer?: string | undefined;
   clientId?: string | undefined;
   fetchImpl?: typeof fetch | undefined;
@@ -84,7 +84,7 @@ export async function refreshAccessToken(input: {
       },
       body: new URLSearchParams({
         grant_type: "refresh_token",
-        refresh_token: input.refreshToken,
+        refresh_token: input.refresh,
         client_id: input.clientId ?? OPENAI_CLIENT_ID,
       }).toString(),
     },
@@ -97,19 +97,18 @@ export function toAuthInfo(input: {
   tokens: TokenResponse;
   now?: number | undefined;
   accountId?: string | undefined;
-  refreshToken?: string | undefined;
+  refresh?: string | undefined;
 }): OpenAiAuthInfo {
-  const refreshToken = input.tokens.refresh_token ?? input.refreshToken;
-  if (!refreshToken) {
+  const refresh = input.tokens.refresh_token ?? input.refresh;
+  if (!refresh) {
     throw new Error("OpenAI token response did not include a refresh token");
   }
 
   return OpenAiAuthInfoSchema.parse({
-    provider: "openai",
-    method: "oauth",
-    accessToken: input.tokens.access_token,
-    refreshToken,
-    expiresAt: (input.now ?? Date.now()) + (input.tokens.expires_in ?? 3600) * 1000,
+    type: "oauth",
+    access: input.tokens.access_token,
+    refresh,
+    expires: (input.now ?? Date.now()) + (input.tokens.expires_in ?? 3600) * 1000,
     accountId: extractAccountId(input.tokens) ?? input.accountId,
   });
 }
@@ -132,7 +131,7 @@ export async function refreshStoredAuth(input: {
     }
 
     const tokens = await refreshAccessToken({
-      refreshToken: auth.refreshToken,
+      refresh: auth.refresh,
       issuer: input.issuer,
       clientId: input.clientId,
       fetchImpl: input.fetchImpl,
@@ -143,7 +142,7 @@ export async function refreshStoredAuth(input: {
       tokens,
       now,
       accountId: auth.accountId,
-      refreshToken: auth.refreshToken,
+      refresh: auth.refresh,
     });
 
     const latestAuth = await input.store.loadOpenAi();
@@ -163,14 +162,13 @@ export async function refreshStoredAuth(input: {
 }
 
 export function isOpenAiAuthFreshEnough(auth: OpenAiAuthInfo, now: number = Date.now()): boolean {
-  return auth.expiresAt - now > AUTH_REFRESH_EXPIRY_SKEW_MS;
+  return auth.expires - now > AUTH_REFRESH_EXPIRY_SKEW_MS;
 }
 
 function isSameStoredAuthSnapshot(leftAuth: OpenAiAuthInfo, rightAuth: OpenAiAuthInfo): boolean {
-  return leftAuth.provider === rightAuth.provider &&
-    leftAuth.method === rightAuth.method &&
-    leftAuth.accessToken === rightAuth.accessToken &&
-    leftAuth.refreshToken === rightAuth.refreshToken &&
-    leftAuth.expiresAt === rightAuth.expiresAt &&
+  return leftAuth.type === rightAuth.type &&
+    leftAuth.access === rightAuth.access &&
+    leftAuth.refresh === rightAuth.refresh &&
+    leftAuth.expires === rightAuth.expires &&
     leftAuth.accountId === rightAuth.accountId;
 }
