@@ -22,7 +22,26 @@ type LineDiffOperation =
   | { operationKind: "add"; lineText: string }
   | { operationKind: "remove"; lineText: string };
 
+type NumberedLineDiffOperation = LineDiffOperation & {
+  operationIndex: number;
+  oldLineNumberBeforeOperation: number;
+  newLineNumberBeforeOperation: number;
+  oldLineNumber: number | undefined;
+  newLineNumber: number | undefined;
+};
+
+type UnifiedDiffHunkOperationWindow = {
+  startOperationIndex: number;
+  endOperationIndex: number;
+};
+
+type UnifiedDiffHunkLineRange = {
+  startLine: number;
+  lineCount: number;
+};
+
 const MAX_EXACT_LINE_DIFF_CELL_COUNT = 250_000;
+const UNIFIED_DIFF_CONTEXT_LINE_COUNT = 3;
 
 export class TypeScriptFileMutationDiffEngine implements FileMutationDiffEngine {
   createFileMutationDiff(input: FileMutationDiffRequest): FileMutationDiffResult {
@@ -48,8 +67,6 @@ function createUnifiedFileDiffWithTypeScriptEngine(input: FileMutationDiffReques
     unifiedDiffText: buildUnifiedDiffText({
       displayPath: input.displayPath,
       beforeFileExists: input.beforeText !== undefined,
-      beforeLines,
-      afterLines,
       lineDiffOperations,
     }),
     addedLineCount,
@@ -61,23 +78,137 @@ function createUnifiedFileDiffWithTypeScriptEngine(input: FileMutationDiffReques
 function buildUnifiedDiffText(input: {
   displayPath: string;
   beforeFileExists: boolean;
-  beforeLines: readonly string[];
-  afterLines: readonly string[];
   lineDiffOperations: readonly LineDiffOperation[];
 }): string {
   const oldPath = input.beforeFileExists ? `a/${input.displayPath}` : "/dev/null";
   const newPath = `b/${input.displayPath}`;
-  const oldStartLine = input.beforeLines.length === 0 ? 0 : 1;
-  const newStartLine = input.afterLines.length === 0 ? 0 : 1;
+  const numberedLineDiffOperations = numberLineDiffOperations(input.lineDiffOperations);
+  const hunkOperationWindows = buildContextualUnifiedDiffHunkOperationWindows(numberedLineDiffOperations);
   const diffLines = [
     `diff --git a/${input.displayPath} b/${input.displayPath}`,
     `--- ${oldPath}`,
     `+++ ${newPath}`,
-    `@@ -${formatUnifiedDiffRange(oldStartLine, input.beforeLines.length)} +${formatUnifiedDiffRange(newStartLine, input.afterLines.length)} @@`,
-    ...input.lineDiffOperations.map(formatLineDiffOperation),
+    ...hunkOperationWindows.flatMap((hunkOperationWindow) => {
+      const hunkLineDiffOperations = numberedLineDiffOperations.slice(
+        hunkOperationWindow.startOperationIndex,
+        hunkOperationWindow.endOperationIndex,
+      );
+
+      return formatUnifiedDiffHunkLines(hunkLineDiffOperations);
+    }),
   ];
 
   return `${diffLines.join("\n")}\n`;
+}
+
+function numberLineDiffOperations(lineDiffOperations: readonly LineDiffOperation[]): NumberedLineDiffOperation[] {
+  let oldLineNumber = 1;
+  let newLineNumber = 1;
+
+  return lineDiffOperations.map((lineDiffOperation, operationIndex) => {
+    const oldLineNumberBeforeOperation = oldLineNumber;
+    const newLineNumberBeforeOperation = newLineNumber;
+    const numberedLineDiffOperation: NumberedLineDiffOperation = {
+      ...lineDiffOperation,
+      operationIndex,
+      oldLineNumberBeforeOperation,
+      newLineNumberBeforeOperation,
+      oldLineNumber: lineDiffOperation.operationKind === "add" ? undefined : oldLineNumber,
+      newLineNumber: lineDiffOperation.operationKind === "remove" ? undefined : newLineNumber,
+    };
+
+    if (lineDiffOperation.operationKind !== "add") {
+      oldLineNumber += 1;
+    }
+    if (lineDiffOperation.operationKind !== "remove") {
+      newLineNumber += 1;
+    }
+
+    return numberedLineDiffOperation;
+  });
+}
+
+function buildContextualUnifiedDiffHunkOperationWindows(
+  lineDiffOperations: readonly NumberedLineDiffOperation[],
+): UnifiedDiffHunkOperationWindow[] {
+  const changedOperationWindows = lineDiffOperations
+    .filter((lineDiffOperation) => lineDiffOperation.operationKind !== "equal")
+    .map((lineDiffOperation) => ({
+      startOperationIndex: Math.max(0, lineDiffOperation.operationIndex - UNIFIED_DIFF_CONTEXT_LINE_COUNT),
+      endOperationIndex: Math.min(
+        lineDiffOperations.length,
+        lineDiffOperation.operationIndex + UNIFIED_DIFF_CONTEXT_LINE_COUNT + 1,
+      ),
+    }));
+
+  const mergedOperationWindows: UnifiedDiffHunkOperationWindow[] = [];
+  for (const changedOperationWindow of changedOperationWindows) {
+    const previousMergedOperationWindow = mergedOperationWindows.at(-1);
+    if (
+      previousMergedOperationWindow
+      && changedOperationWindow.startOperationIndex <= previousMergedOperationWindow.endOperationIndex
+    ) {
+      previousMergedOperationWindow.endOperationIndex = Math.max(
+        previousMergedOperationWindow.endOperationIndex,
+        changedOperationWindow.endOperationIndex,
+      );
+      continue;
+    }
+
+    mergedOperationWindows.push({ ...changedOperationWindow });
+  }
+
+  return mergedOperationWindows;
+}
+
+function formatUnifiedDiffHunkLines(hunkLineDiffOperations: readonly NumberedLineDiffOperation[]): string[] {
+  if (hunkLineDiffOperations.length === 0) {
+    return [];
+  }
+
+  const oldLineRange = buildUnifiedDiffHunkLineRange(hunkLineDiffOperations, "old");
+  const newLineRange = buildUnifiedDiffHunkLineRange(hunkLineDiffOperations, "new");
+
+  return [
+    `@@ -${formatUnifiedDiffRange(oldLineRange.startLine, oldLineRange.lineCount)} +${formatUnifiedDiffRange(newLineRange.startLine, newLineRange.lineCount)} @@`,
+    ...hunkLineDiffOperations.map(formatLineDiffOperation),
+  ];
+}
+
+function buildUnifiedDiffHunkLineRange(
+  hunkLineDiffOperations: readonly NumberedLineDiffOperation[],
+  fileSide: "old" | "new",
+): UnifiedDiffHunkLineRange {
+  const firstLineDiffOperation = hunkLineDiffOperations[0];
+  if (!firstLineDiffOperation) {
+    throw new Error("Cannot build a unified diff hunk range without hunk operations.");
+  }
+
+  const consumedLineNumbers = hunkLineDiffOperations.flatMap((lineDiffOperation) => {
+    const consumedLineNumber = fileSide === "old" ? lineDiffOperation.oldLineNumber : lineDiffOperation.newLineNumber;
+    return consumedLineNumber === undefined ? [] : [consumedLineNumber];
+  });
+
+  if (consumedLineNumbers.length > 0) {
+    const firstConsumedLineNumber = consumedLineNumbers[0];
+    if (firstConsumedLineNumber === undefined) {
+      throw new Error("Expected a unified diff hunk range to have a first consumed line number.");
+    }
+
+    return {
+      startLine: firstConsumedLineNumber,
+      lineCount: consumedLineNumbers.length,
+    };
+  }
+
+  const lineNumberBeforePureChange = fileSide === "old"
+    ? firstLineDiffOperation.oldLineNumberBeforeOperation
+    : firstLineDiffOperation.newLineNumberBeforeOperation;
+
+  return {
+    startLine: Math.max(0, lineNumberBeforePureChange - 1),
+    lineCount: 0,
+  };
 }
 
 function formatUnifiedDiffRange(startLine: number, lineCount: number): string {
